@@ -1,0 +1,148 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "type": "string",
+      "metadata": {
+        "description": "Specifies a project name that is used to generate all the resources."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Specifies the Azure location for all resources based on the location of your events."
+      }
+    },
+    "eventHubSku": {
+      "type": "string",
+      "defaultValue": "Standard",
+      "allowedValues": [
+        "Basic",
+        "Standard",
+        "Premium"
+      ],
+      "metadata": {
+        "description": "Specifies the messaging tier for the Event Hub Namespace. The Basic tier is not recommended due to its limitations."
+      }
+    },
+    "troughputUnit": {
+      "type": "int",
+      "minValue": 1,
+      "maxValue": 20,
+      "defaultValue": 1,
+      "metadata": {
+        "description": "A unit gives you up to 1 MB per second or 1,000 events per second (whichever comes first) per Event Hub Namespace."
+      }
+    },
+    "enableAutoInflate": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When checked, the Auto-inflate feature of Event Hubs automatically scales up by increasing the number of throughput units to meet usage needs."
+      }
+    },
+    "autoInflateMaximumThroughputUnit": {
+      "type": "int",
+      "minValue": 0,
+      "maxValue": 40,
+      "defaultValue": 0,
+      "metadata": {
+        "description": "When Enable Auto Inflate is checked, you can specify the maximum throughput units allowed. If disabled, leave this value at 0."
+      }
+    },
+    "partitionCount": {
+      "type": "int",
+      "defaultValue": 4,
+      "minValue": 1,
+      "maxValue": 32,
+      "metadata": {
+        "description": "The number of Event Hub partitions. Unless you plan to add more Event Hubs to the namespace, the Partition Count and Throughput Unit values should match."
+      }
+    },
+    "retentionTime": {
+      "type": "int",
+      "minValue": 1,
+      "maxValue": 7,
+      "defaultValue": 7,
+      "metadata": {
+        "description": "How long events are kept in the Event Hub, in days."
+      }
+    }
+  },
+  "functions": [],
+  "variables": {
+    "eventHubNamespaceName": "[format('{0}-ehns', parameters('projectName'))]",
+    "eventHubName": "[format('{0}-eh', parameters('projectName'))]",
+    "sharedAccessPolicyName": "[format('{0}-ap', parameters('projectName'))]",
+    "consumerGroupName": "[format('{0}-cp', parameters('projectName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2021-11-01",
+      "name": "[variables('eventHubNamespaceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('eventHubSku')]",
+        "tier": "[parameters('eventHubSku')]",
+        "capacity": "[parameters('troughputUnit')]"
+      },
+      "properties": {
+        "isAutoInflateEnabled": "[parameters('enableAutoInflate')]",
+        "maximumThroughputUnits": "[parameters('autoInflateMaximumThroughputUnit')]"
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}', variables('eventHubNamespaceName'), variables('eventHubName'))]",
+      "properties": {
+        "messageRetentionInDays": "[parameters('retentionTime')]",
+        "partitionCount": "[parameters('partitionCount')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', variables('eventHubNamespaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs/authorizationRules",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}/{2}', variables('eventHubNamespaceName'), variables('eventHubName'), variables('sharedAccessPolicyName'))]",
+      "properties": {
+        "rights": [
+          "Listen"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', variables('eventHubNamespaceName'), variables('eventHubName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs/consumergroups",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}/{2}', variables('eventHubNamespaceName'), variables('eventHubName'), variables('consumerGroupName'))]",
+      "properties": {
+        "userMetadata": "HarfangLab"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', variables('eventHubNamespaceName'), variables('eventHubName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "HubConnectionString": {
+      "type": "string",
+      "value": "[listKeys(resourceId('Microsoft.EventHub/namespaces/eventhubs/authorizationRules', variables('eventHubNamespaceName'), variables('eventHubName'), variables('sharedAccessPolicyName')), '2017-04-01').primaryConnectionString]"
+    },
+    "HubConsumerGroup": {
+      "type": "string",
+      "value": "[variables('consumerGroupName')]"
+    },
+    "eventHubName": {
+      "type": "string",
+      "value": "[variables('eventHubName')]"
+    }
+  }
+}
